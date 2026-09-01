@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URI
 
 object DiziboxSourceResolver {
@@ -49,14 +50,15 @@ object DiziboxSourceResolver {
             if (url.contains(".m3u8") || url.contains(".mp4")) {
                 val isM3u8 = url.contains(".m3u8")
                 safeLinkCallback(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "DiziBox",
                         name = "DiziBox Direct Stream",
                         url = url,
-                        referer = referer ?: mainUrl,
-                        quality = Qualities.Unknown.value,
                         type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    )
+                    ) {
+                        this.referer = referer ?: mainUrl
+                        this.quality = Qualities.Unknown.value
+                    }
                 )
                 return true
             }

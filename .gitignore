@@ -1,13 +1,17 @@
 *.iml
+.gradle/
 .gradle
+local.properties
 /local.properties
 /.idea/
 .DS_Store
-/build
+build/
+/build/
+**/build/
+DiziboxProvider/build/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 *.apk
 *.ap_
 *.dex
@@ -20,3 +24,4 @@ player_king.html
 molystream_embed.html
 arsiv.html
 search_archive_results.html
+search_loki.html
