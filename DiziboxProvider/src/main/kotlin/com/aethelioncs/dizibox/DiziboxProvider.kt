@@ -15,12 +15,12 @@ class DiziboxProvider : MainAPI() {
     override var hasMainPage = true
 
     override val mainPage = mainPageOf(
-        "$mainUrl/diziler/" to "Tüm Diziler",
-        "$mainUrl/arsiv/" to "Arşiv"
+        "https://www.dizibox.live/diziler/" to "Tüm Diziler",
+        "https://www.dizibox.live/arsiv/" to "Arşiv"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = request.data
+        val url = if (request.data.startsWith("http")) request.data else "$mainUrl${request.data}"
         val html = app.get(url, referer = mainUrl).text
         val results = DiziboxParser.parseSearchResults(html, mainUrl)
 
