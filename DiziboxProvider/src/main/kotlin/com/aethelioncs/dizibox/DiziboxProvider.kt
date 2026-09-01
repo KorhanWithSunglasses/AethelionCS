@@ -1,12 +1,10 @@
 package com.aethelioncs.dizibox
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.Jsoup
 import java.net.URLEncoder
 
-@CloudstreamPlugin
 class DiziboxProvider : MainAPI() {
     override var name = "DiziBox"
     override var mainUrl = "https://www.dizibox.live"
