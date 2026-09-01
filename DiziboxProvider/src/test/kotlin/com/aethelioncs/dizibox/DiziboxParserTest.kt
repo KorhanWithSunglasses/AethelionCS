@@ -33,6 +33,16 @@ class DiziboxParserTest {
     }
 
     @Test
+    fun testCleanPosterUrl() {
+        val mainUrl = "https://www.dizibox.live"
+        assertEquals(
+            "https://www.dizibox.live/wp-content/uploads/afisler/friends-200x290.jpg",
+            DiziboxParser.cleanPosterUrl("https://www.dizibox.live/wp-content/uploads/afisler/friends-50x50.jpg", mainUrl)
+        )
+        assertNull(DiziboxParser.cleanPosterUrl("https://www.dizibox.live/altyazi.png", mainUrl))
+    }
+
+    @Test
     fun testParseEpisodesFromHtml() {
         val sampleHtml = """
             <div class="season-episode">

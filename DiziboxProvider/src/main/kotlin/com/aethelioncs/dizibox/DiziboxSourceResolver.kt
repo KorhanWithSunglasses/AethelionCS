@@ -63,16 +63,31 @@ object DiziboxSourceResolver {
                 return true
             }
 
-            // 2. Known Extractor Match via loadExtractor (Vidmoly, Molystream, etc.)
-            val normalizedExtractorUrl = if (host.contains("molystream.org")) {
-                url
-            } else {
-                url
+            // 2. Molystream / Vidmoly Stream Direct Extraction
+            if (host.contains("molystream.org") && url.contains("/embed/")) {
+                val m3u8Url = if (url.contains("/embed/sheila/")) {
+                    url
+                } else {
+                    url.replace("/embed/", "/embed/sheila/")
+                }
+
+                safeLinkCallback(
+                    newExtractorLink(
+                        source = "Molystream",
+                        name = "Molystream HLS (720p)",
+                        url = m3u8Url,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = url
+                        this.quality = Qualities.P720.value
+                    }
+                )
             }
 
+            // 3. Known Extractor Match via loadExtractor (Vidmoly, etc.)
             try {
                 val extractorLoaded = loadExtractor(
-                    url = normalizedExtractorUrl,
+                    url = url,
                     referer = referer ?: mainUrl,
                     subtitleCallback = safeSubtitleCallback,
                     callback = safeLinkCallback
@@ -81,10 +96,10 @@ object DiziboxSourceResolver {
                     return true
                 }
             } catch (e: Exception) {
-                // Isolated exception, continue to iframe resolution
+                // Isolated exception, continue
             }
 
-            // 3. Nested Iframe Crawling
+            // 4. Nested Iframe Crawling
             try {
                 val html = app.get(url, referer = referer ?: mainUrl).text
                 val iframes = DiziboxParser.extractIframes(html, url)

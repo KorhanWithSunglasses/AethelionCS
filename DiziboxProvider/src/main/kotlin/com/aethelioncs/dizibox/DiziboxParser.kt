@@ -30,6 +30,14 @@ object DiziboxParser {
         }
     }
 
+    fun cleanPosterUrl(rawUrl: String?, mainUrl: String): String? {
+        val fixed = fixUrl(rawUrl, mainUrl) ?: return null
+        if (fixed.contains("altyazi.png") || fixed.contains("default") || fixed.contains("blank")) {
+            return null
+        }
+        return fixed.replace(Regex("""-\d+x\d+\."""), "-200x290.")
+    }
+
     fun parseSeasonNumber(text: String, href: String = ""): Int? {
         SEASON_TEXT_REGEX.find(text)?.let {
             return it.groupValues[1].toIntOrNull()
@@ -50,17 +58,77 @@ object DiziboxParser {
         return null
     }
 
-    fun parseSearchResults(html: String, mainUrl: String): List<Pair<String, String>> {
+    fun parseSearchResults(html: String, mainUrl: String): List<DiziboxSearchItem> {
         val doc = Jsoup.parse(html)
-        val results = mutableListOf<Pair<String, String>>()
+        val results = mutableListOf<DiziboxSearchItem>()
         val seenUrls = mutableSetOf<String>()
 
-        val links = doc.select("a[href*=\"/diziler/\"]")
-        for (a in links) {
-            val title = a.text().trim()
+        val cards = doc.select("article, .post, .item, .tv-item, li")
+        for (card in cards) {
+            val a = card.selectFirst("a[href*=\"/diziler/\"], a[href*=\"-izle\"]") ?: continue
             val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-            if (title.isNotEmpty() && !href.endsWith("/diziler/") && seenUrls.add(href)) {
-                results.add(Pair(title, href))
+            if (href.endsWith("/diziler/") || !seenUrls.add(href)) continue
+
+            val img = card.selectFirst("img")
+            val rawImg = img?.attr("data-src")?.ifEmpty { null }
+                ?: img?.attr("data-lazy-src")?.ifEmpty { null }
+                ?: img?.attr("src")?.ifEmpty { null }
+            val poster = cleanPosterUrl(rawImg, mainUrl)
+
+            val titleEl = card.selectFirst(".tv-title, .title, .post-title, h2, h3, h4") ?: a
+            val title = titleEl.text().trim().replace(Regex("""\s*\d+\.\d+/10.*"""), "").replace(Regex("""\s*izle.*"""), "").trim()
+
+            if (title.isNotEmpty()) {
+                results.add(DiziboxSearchItem(title, href, poster))
+            }
+        }
+
+        // Fallback: direct links
+        if (results.isEmpty()) {
+            val links = doc.select("a[href*=\"/diziler/\"]")
+            for (a in links) {
+                val title = a.text().trim()
+                val href = fixUrl(a.attr("href"), mainUrl) ?: continue
+                if (title.isNotEmpty() && !href.endsWith("/diziler/") && seenUrls.add(href)) {
+                    results.add(DiziboxSearchItem(title, href, null))
+                }
+            }
+        }
+
+        return results
+    }
+
+    fun parseHomePageSection(html: String, sectionTitlePattern: String, mainUrl: String): List<DiziboxSearchItem> {
+        val doc = Jsoup.parse(html)
+        val results = mutableListOf<DiziboxSearchItem>()
+        val seenUrls = mutableSetOf<String>()
+
+        val blocks = doc.select(".content-wrapper > div, .row, .full-width, .widget, .block")
+        for (block in blocks) {
+            val blockHeader = block.selectFirst(".title, h2, h3, h4, .widget-title")?.text() ?: ""
+            if (blockHeader.contains(sectionTitlePattern, ignoreCase = true)) {
+                val cards = block.select("article, .post, .item, .tv-item, li")
+                for (card in cards) {
+                    val a = card.selectFirst("a") ?: continue
+                    val href = fixUrl(a.attr("href"), mainUrl) ?: continue
+                    if (href.endsWith("/diziler/") || !seenUrls.add(href)) continue
+
+                    val img = card.selectFirst("img")
+                    val rawImg = img?.attr("data-src")?.ifEmpty { null }
+                        ?: img?.attr("data-lazy-src")?.ifEmpty { null }
+                        ?: img?.attr("src")?.ifEmpty { null }
+                    val poster = cleanPosterUrl(rawImg, mainUrl)
+
+                    val titleEl = card.selectFirst(".tv-title, .title, .post-title, h2, h3, h4") ?: a
+                    val title = titleEl.text().trim()
+                        .replace(Regex("""\s*\d+\.\d+/10.*"""), "")
+                        .replace(Regex("""\s*izle.*"""), "")
+                        .trim()
+
+                    if (title.isNotEmpty()) {
+                        results.add(DiziboxSearchItem(title, href, poster))
+                    }
+                }
             }
         }
         return results

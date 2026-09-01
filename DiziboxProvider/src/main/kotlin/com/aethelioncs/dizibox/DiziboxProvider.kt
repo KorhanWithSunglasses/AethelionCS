@@ -9,115 +9,133 @@ class DiziboxProvider : MainAPI() {
     override var name = "DiziBox"
     override var mainUrl = "https://www.dizibox.live"
     override var lang = "tr"
-    override var supportedTypes = setOf(TvType.TvSeries)
-    override var hasMainPage = true
+    override val hasMainPage = true
+    override val hasQuickSearch = false
+
+    override val supportedTypes = setOf(
+        TvType.TvSeries
+    )
 
     override val mainPage = mainPageOf(
-        "https://www.dizibox.live/diziler/" to "Tüm Diziler",
-        "https://www.dizibox.live/arsiv/" to "Arşiv"
+        "https://www.dizibox.live/diziler/?orderby=popular" to "Popüler Diziler",
+        "https://www.dizibox.live/" to "Son Eklenen Bölümler",
+        "https://www.dizibox.live/diziler/" to "Tüm Diziler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (request.data.startsWith("http")) request.data else "$mainUrl${request.data}"
-        val html = app.get(url, referer = mainUrl).text
-        val results = DiziboxParser.parseSearchResults(html, mainUrl)
+        val pageUrl = if (page > 1) {
+            if (url.contains("?")) {
+                url.replace("?", "page/$page/?")
+            } else {
+                "${url.trimEnd('/')}/page/$page/"
+            }
+        } else {
+            url
+        }
 
-        val homeItems = results.map { (title, link) ->
-            newTvSeriesSearchResponse(title, link, TvType.TvSeries)
+        val html = app.get(pageUrl, referer = mainUrl).text
+        val results = if (request.name == "Son Eklenen Bölümler") {
+            val sectionItems = DiziboxParser.parseHomePageSection(html, "Bölümler", mainUrl)
+            if (sectionItems.isNotEmpty()) sectionItems else DiziboxParser.parseSearchResults(html, mainUrl)
+        } else {
+            DiziboxParser.parseSearchResults(html, mainUrl)
+        }
+
+        val homeItems = results.map { item ->
+            newTvSeriesSearchResponse(item.title, item.url, TvType.TvSeries) {
+                this.posterUrl = item.posterUrl
+            }
         }
 
         return newHomePageResponse(
             listOf(HomePageList(request.name, homeItems)),
-            hasNext = false
+            hasNext = homeItems.isNotEmpty() && request.name == "Tüm Diziler"
         )
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        val archiveSearchUrl = "$mainUrl/arsiv/?&dizi=$encodedQuery"
+        val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
+        val searchUrl = "$mainUrl/?s=$encodedQuery"
+        val html = app.get(searchUrl, referer = mainUrl).text
+        val results = DiziboxParser.parseSearchResults(html, mainUrl)
 
-        return try {
-            val html = app.get(archiveSearchUrl, referer = mainUrl).text
-            val results = DiziboxParser.parseSearchResults(html, mainUrl)
-            
-            val filtered = results.filter { (title, _) ->
-                title.contains(query, ignoreCase = true)
+        return results.map { item ->
+            newTvSeriesSearchResponse(item.title, item.url, TvType.TvSeries) {
+                this.posterUrl = item.posterUrl
             }
-
-            val finalResults = if (filtered.isNotEmpty()) filtered else results
-
-            finalResults.map { (title, link) ->
-                newTvSeriesSearchResponse(title, link, TvType.TvSeries)
-            }
-        } catch (e: Exception) {
-            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val html = app.get(url, referer = mainUrl).text
+        val absoluteUrl = DiziboxParser.fixUrl(url, mainUrl) ?: url
+        val html = app.get(absoluteUrl, referer = mainUrl).text
         val doc = Jsoup.parse(html)
 
-        val title = doc.select("h1").firstOrNull()?.text()?.trim() ?: "DiziBox Series"
-        val poster = doc.select("img.main-cover").firstOrNull()?.attr("src")
-            ?: doc.select(".poster img, .series-poster img").firstOrNull()?.attr("src")
-        val absolutePoster = DiziboxParser.fixUrl(poster, mainUrl)
+        val rawTitle = doc.selectFirst("h1.entry-title, h1, .title, .post-title")?.text()?.trim() ?: "DiziBox"
+        val title = rawTitle.replace(Regex("""\s*izle.*"""), "").trim()
 
-        val plot = doc.select(".summary, .entry-content, .grid-box p, p.story").firstOrNull()?.text()?.trim()
+        val rawPoster = doc.selectFirst(".poster img, .entry-content img, article img")?.attr("data-src")?.ifEmpty { null }
+            ?: doc.selectFirst(".poster img, .entry-content img, article img")?.attr("src")?.ifEmpty { null }
+        val poster = DiziboxParser.cleanPosterUrl(rawPoster, mainUrl)
 
-        val allEpisodes = mutableListOf<Episode>()
+        val plot = doc.selectFirst(".description, .entry-content p, .overview")?.text()?.trim()
+        val year = doc.selectFirst(".release-year, .year")?.text()?.toIntOrNull()
 
-        // Check multi-season tabs
         val seasonTabs = DiziboxParser.parseSeasonTabs(html, mainUrl)
+        val allEpisodes = mutableListOf<Episode>()
 
         if (seasonTabs.isNotEmpty()) {
             for (tab in seasonTabs) {
-                try {
-                    val seasonHtml = app.get(tab.url, referer = url).text
-                    val seasonEpisodes = DiziboxParser.parseEpisodes(seasonHtml, tab.seasonNumber, mainUrl)
-                    for (ep in seasonEpisodes) {
-                        allEpisodes.add(
-                            newEpisode(ep.url) {
-                                this.name = ep.name
-                                this.season = ep.season
-                                this.episode = ep.episode
-                                this.posterUrl = absolutePoster
-                            }
-                        )
+                val tabEpisodes = if (tab.url == absoluteUrl) {
+                    DiziboxParser.parseEpisodes(html, tab.seasonNumber, mainUrl)
+                } else {
+                    try {
+                        val tabHtml = app.get(tab.url, referer = absoluteUrl).text
+                        DiziboxParser.parseEpisodes(tabHtml, tab.seasonNumber, mainUrl)
+                    } catch (e: Exception) {
+                        emptyList()
                     }
-                } catch (e: Exception) {
-                    // Fail gracefully for this single season
+                }
+                for (ep in tabEpisodes) {
+                    allEpisodes.add(
+                        newEpisode(ep.url) {
+                            this.name = ep.name
+                            this.season = ep.season
+                            this.episode = ep.episode
+                        }
+                    )
                 }
             }
         } else {
-            // Single-season layout
-            val singleSeasonEpisodes = DiziboxParser.parseEpisodes(html, defaultSeason = 1, mainUrl = mainUrl)
+            val singleSeasonEpisodes = DiziboxParser.parseEpisodes(html, 1, mainUrl)
             for (ep in singleSeasonEpisodes) {
                 allEpisodes.add(
                     newEpisode(ep.url) {
                         this.name = ep.name
                         this.season = ep.season
                         this.episode = ep.episode
-                        this.posterUrl = absolutePoster
                     }
                 )
             }
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, allEpisodes) {
-            this.posterUrl = absolutePoster
+        return newTvSeriesLoadResponse(title, absoluteUrl, TvType.TvSeries, allEpisodes) {
+            this.posterUrl = poster
             this.plot = plot
+            this.year = year
         }
     }
 
     override suspend fun loadLinks(
         data: String,
-        isDataJob: Boolean,
+        isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val episodeUrl = DiziboxParser.fixUrl(data, mainUrl) ?: data
         return DiziboxSourceResolver.resolveEpisodeLinks(
-            episodeUrl = data,
+            episodeUrl = episodeUrl,
             mainUrl = mainUrl,
             subtitleCallback = subtitleCallback,
             callback = callback
