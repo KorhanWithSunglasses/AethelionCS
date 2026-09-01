@@ -40,7 +40,7 @@ HLS Master Stream (master.m3u8) / Native ExoPlayer
 2. Go to **Settings** → **Extensions** → **Add Repository**.
 3. Enter the repository details:
    - **Repository Name:** `AethelionCS`
-   - **Repository URL:** `https://raw.githubusercontent.com/Aethelion/AethelionCS/builds/plugins.json`
+   - **Repository URL:** `https://raw.githubusercontent.com/KorhanWithSunglasses/AethelionCS/master/repo.json`
 4. Click **Download** and install the **DiziBox** plugin.
 
 ---

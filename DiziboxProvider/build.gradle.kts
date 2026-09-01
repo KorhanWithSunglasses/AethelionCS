@@ -7,7 +7,7 @@ plugins {
 version = "1"
 
 cloudstream {
-    setRepo("https://github.com/Aethelion/AethelionCS")
+    setRepo("https://github.com/KorhanWithSunglasses/AethelionCS")
 }
 
 android {
