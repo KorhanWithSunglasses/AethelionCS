@@ -1,0 +1,103 @@
+package com.aethelioncs.dizibox
+
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
+import java.net.URI
+
+object DiziboxSourceResolver {
+
+    private const val MAX_IFRAME_DEPTH = 3
+    private const val MAX_SOURCE_CANDIDATES = 20
+
+    suspend fun resolveEpisodeLinks(
+        episodeUrl: String,
+        mainUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        var foundAnyLink = false
+        val visitedUrls = mutableSetOf<String>()
+        val seenSubtitleKeys = mutableSetOf<String>()
+
+        val safeSubtitleCallback: (SubtitleFile) -> Unit = { sub ->
+            val key = "${sub.lang}_${sub.url}"
+            if (seenSubtitleKeys.add(key)) {
+                subtitleCallback(sub)
+            }
+        }
+
+        val safeLinkCallback: (ExtractorLink) -> Unit = { link ->
+            foundAnyLink = true
+            callback(link)
+        }
+
+        suspend fun resolveUrlRecursive(url: String, depth: Int, referer: String?): Boolean {
+            if (depth > MAX_IFRAME_DEPTH || visitedUrls.size >= MAX_SOURCE_CANDIDATES) return false
+            if (!visitedUrls.add(url)) return false
+
+            val uri = try { URI(url) } catch (e: Exception) { return false }
+            val scheme = uri.scheme?.lowercase() ?: return false
+            if (scheme != "http" && scheme != "https") return false
+
+            val host = uri.host?.lowercase() ?: ""
+
+            // 1. Direct Media Check (m3u8, mp4)
+            if (url.contains(".m3u8") || url.contains(".mp4")) {
+                val isM3u8 = url.contains(".m3u8")
+                safeLinkCallback(
+                    ExtractorLink(
+                        source = "DiziBox",
+                        name = "DiziBox Direct Stream",
+                        url = url,
+                        referer = referer ?: mainUrl,
+                        quality = Qualities.Unknown.value,
+                        type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    )
+                )
+                return true
+            }
+
+            // 2. Known Extractor Match via loadExtractor (Vidmoly, Molystream, etc.)
+            val normalizedExtractorUrl = if (host.contains("molystream.org")) {
+                url
+            } else {
+                url
+            }
+
+            try {
+                val extractorLoaded = loadExtractor(
+                    url = normalizedExtractorUrl,
+                    referer = referer ?: mainUrl,
+                    subtitleCallback = safeSubtitleCallback,
+                    callback = safeLinkCallback
+                )
+                if (extractorLoaded && foundAnyLink) {
+                    return true
+                }
+            } catch (e: Exception) {
+                // Isolated exception, continue to iframe resolution
+            }
+
+            // 3. Nested Iframe Crawling
+            try {
+                val html = app.get(url, referer = referer ?: mainUrl).text
+                val iframes = DiziboxParser.extractIframes(html, url)
+                for (nestedIframe in iframes) {
+                    if (visitedUrls.size >= MAX_SOURCE_CANDIDATES) break
+                    resolveUrlRecursive(nestedIframe, depth + 1, url)
+                }
+            } catch (e: Exception) {
+                // Fail gracefully for this single branch
+            }
+
+            return foundAnyLink
+        }
+
+        resolveUrlRecursive(episodeUrl, depth = 1, referer = mainUrl)
+        return foundAnyLink
+    }
+}
