@@ -11,6 +11,16 @@ object DiziboxParser {
     private val EPISODE_TEXT_REGEX = Regex("""(\d+)\s*\.\s*[bB][öoÖO]l[üuÜU]m""")
     private val EPISODE_URL_REGEX = Regex("""-(\d+)-bolum""")
 
+    private val EXCLUDED_PATHS = setOf(
+        "/arsiv", "/arsiv/",
+        "/dizi-takvimi", "/dizi-takvimi/",
+        "/yardim", "/yardim/",
+        "/iletisim", "/iletisim/",
+        "/tum-bolumler", "/tum-bolumler/",
+        "/diziler", "/diziler/",
+        "/wp-login.php", "/login"
+    )
+
     fun fixUrl(url: String?, mainUrl: String): String? {
         if (url.isNullOrBlank()) return null
         val trimmed = url.trim()
@@ -28,6 +38,21 @@ object DiziboxParser {
         } catch (e: Exception) {
             trimmed
         }
+    }
+
+    fun isSeriesDetailUrl(url: String): Boolean {
+        val fixed = fixUrl(url, "https://www.dizibox.live") ?: return false
+        val uri = try { URI(fixed) } catch (e: Exception) { return false }
+        val path = uri.path?.trimEnd('/') ?: ""
+
+        if (EXCLUDED_PATHS.any { it.trimEnd('/') == path }) return false
+        if (path.contains("takvim") || path.contains("yardim") || path.contains("iletisim") || path.contains("login") || path.contains("auth")) {
+            return false
+        }
+
+        return (path.startsWith("/diziler/") && path != "/diziler") ||
+                path.startsWith("/dizi/") ||
+                (path.endsWith("-izle") && !path.contains("-sezon-") && !path.contains("-bolum-"))
     }
 
     fun cleanPosterUrl(rawUrl: String?, mainUrl: String): String? {
@@ -63,14 +88,16 @@ object DiziboxParser {
         val results = mutableListOf<DiziboxSearchItem>()
         val seenUrls = mutableSetOf<String>()
 
-        val cards = doc.select("article, .post, .item, .tv-item, .poster, li, .full-width .row > div")
+        val cards = doc.select(".content-wrapper article, .content-wrapper .post, .content-wrapper .item, .content-wrapper .tv-item, .tv-list article, .tv-list .item")
         for (card in cards) {
-            // Ignore auth, login or modal forms
-            if (card.parents().any { it.hasClass("ajax-auth") || it.hasClass("modal") || it.id() == "login" }) continue
+            // Strictly exclude navigation, header, footer and auth elements
+            if (card.parents().any { it.tagName() == "nav" || it.tagName() == "header" || it.tagName() == "footer" || it.hasClass("ajax-auth") || it.hasClass("menu") || it.hasClass("navigation") }) {
+                continue
+            }
 
-            val a = card.selectFirst("a[href*=\"/diziler/\"], a[href*=\"-izle\"], a[href*=\"/dizi/\"]") ?: card.selectFirst("a") ?: continue
+            val a = card.selectFirst("a[href*=\"/diziler/\"], a[href*=\"-izle\"], a[href*=\"/dizi/\"]") ?: continue
             val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-            if (href.endsWith("/diziler/") || href.contains("#") || !seenUrls.add(href)) continue
+            if (!isSeriesDetailUrl(href) || !seenUrls.add(href)) continue
 
             val img = card.selectFirst("img")
             val rawImg = img?.attr("data-src")?.ifEmpty { null }
@@ -80,7 +107,7 @@ object DiziboxParser {
 
             val titleEl = card.selectFirst(".tv-title, .title, .post-title, h2, h3, h4") ?: a
             var title = titleEl.text().trim()
-            if (title.equals("ÜYE GİRİŞİ", ignoreCase = true) || title.equals("GİRİŞ", ignoreCase = true) || title.contains("Yorumlar")) {
+            if (title.equals("ÜYE GİRİŞİ", ignoreCase = true) || title.equals("Arşiv", ignoreCase = true) || title.contains("Takvim", ignoreCase = true)) {
                 continue
             }
             title = title
@@ -93,13 +120,17 @@ object DiziboxParser {
             }
         }
 
-        // Fallback: direct links
+        // Fallback only if no cards matched, strictly using isSeriesDetailUrl filter
         if (results.isEmpty()) {
-            val links = doc.select("a[href*=\"/diziler/\"]")
+            val links = doc.select(".content-wrapper a[href*=\"/diziler/\"], main a[href*=\"/diziler/\"]")
             for (a in links) {
-                val title = a.text().trim()
                 val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-                if (title.isNotEmpty() && !href.endsWith("/diziler/") && seenUrls.add(href)) {
+                if (!isSeriesDetailUrl(href) || !seenUrls.add(href)) continue
+                val title = a.text().trim()
+                    .replace(Regex("""\s*\d+\.\d+/10.*"""), "")
+                    .replace(Regex("""\s*izle.*""", RegexOption.IGNORE_CASE), "")
+                    .trim()
+                if (title.isNotEmpty()) {
                     results.add(DiziboxSearchItem(title, href, null))
                 }
             }
@@ -117,11 +148,13 @@ object DiziboxParser {
         for (block in blocks) {
             val blockHeader = block.selectFirst(".title, h2, h3, h4, .widget-title")?.text() ?: ""
             if (blockHeader.contains(sectionTitlePattern, ignoreCase = true)) {
-                val cards = block.select("article, .post, .item, .tv-item, li, div[class*='item']")
+                val cards = block.select("article, .post, .item, .tv-item, li")
                 for (card in cards) {
+                    if (card.parents().any { it.tagName() == "nav" || it.hasClass("ajax-auth") || it.hasClass("menu") }) continue
+
                     val a = card.selectFirst("a") ?: continue
                     val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-                    if (href.endsWith("/diziler/") || href.contains("#") || !seenUrls.add(href)) continue
+                    if (href.endsWith("/diziler/") || !seenUrls.add(href)) continue
 
                     val img = card.selectFirst("img")
                     val rawImg = img?.attr("data-src")?.ifEmpty { null }
@@ -168,10 +201,17 @@ object DiziboxParser {
         val episodes = mutableListOf<ParsedEpisode>()
         val seenUrls = mutableSetOf<String>()
 
-        val links = doc.select(".season-episode a, a[href*=\"-sezon-\"][href*=\"-bolum-\"]")
+        // Target only episode containers, avoiding global page links
+        val episodeContainers = doc.select(".season-episode, .episodes-list, .tv-episodes, .box-body, article.post")
+        val links = if (episodeContainers.isNotEmpty()) {
+            episodeContainers.select("a[href*=\"-sezon-\"][href*=\"-bolum-\"], a[href*=\"-bolum-\"]")
+        } else {
+            doc.select(".content-wrapper a[href*=\"-sezon-\"][href*=\"-bolum-\"], .content-wrapper a[href*=\"-bolum-\"]")
+        }
+
         for (a in links) {
             val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-            if (!seenUrls.add(href)) continue
+            if (!href.contains("-bolum") || !seenUrls.add(href)) continue
 
             val text = a.text().trim()
             val parent = a.parent()

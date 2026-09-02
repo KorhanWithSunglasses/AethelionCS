@@ -69,13 +69,17 @@ class DiziboxProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val absoluteUrl = DiziboxParser.fixUrl(url, mainUrl) ?: url
+        if (!DiziboxParser.isSeriesDetailUrl(absoluteUrl)) {
+            throw ErrorLoadingException("Geçersiz dizi sayfası URL'si: $absoluteUrl")
+        }
+
         val html = app.get(absoluteUrl, referer = mainUrl).text
         val doc = Jsoup.parse(html)
 
-        // 1. Robust Title Extraction (Avoiding hidden auth / login modals)
+        // 1. Robust Title Extraction (Ignoring auth / login modals)
         val ogTitle = doc.selectFirst("meta[property=\"og:title\"]")?.attr("content")?.trim()
         val overviewTitle = doc.selectFirst(".tv-overview .title-terms, .tv-overview h1, .tv-overview .tv-title")?.text()?.trim()
-        val h1Title = doc.selectFirst("main h1, .content h1, h1.entry-title")?.text()?.trim()
+        val h1Title = doc.selectFirst("main h1, .content-wrapper h1, h1.entry-title")?.text()?.trim()
 
         val rawTitle = when {
             !ogTitle.isNullOrBlank() && !ogTitle.equals("ÜYE GİRİŞİ", ignoreCase = true) -> ogTitle

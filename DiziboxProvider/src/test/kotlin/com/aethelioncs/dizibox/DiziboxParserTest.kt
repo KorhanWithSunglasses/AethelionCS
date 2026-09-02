@@ -6,6 +6,21 @@ import org.junit.Test
 class DiziboxParserTest {
 
     @Test
+    fun testIsSeriesDetailUrl() {
+        assertTrue(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/diziler/loki/"))
+        assertTrue(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/diziler/the-ghost-in-the-shell/"))
+        assertTrue(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/dizi/friends-izle-hd/"))
+        assertTrue(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/friends-izle/"))
+
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/arsiv/"))
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/dizi-takvimi/"))
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/yardim/"))
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/iletisim/"))
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/diziler/"))
+        assertFalse(DiziboxParser.isSeriesDetailUrl("https://www.dizibox.live/loki-1-sezon-1-bolum-izle/"))
+    }
+
+    @Test
     fun testParseSeasonNumber() {
         assertEquals(1, DiziboxParser.parseSeasonNumber("1.Sezon 5.Bölüm"))
         assertEquals(2, DiziboxParser.parseSeasonNumber("2. Sezon", "https://www.dizibox.live/dizi/2-broke-girls/2-sezon-2-broke-girls/"))
