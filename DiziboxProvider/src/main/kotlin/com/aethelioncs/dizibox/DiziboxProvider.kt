@@ -93,8 +93,9 @@ class DiziboxProvider : MainAPI() {
             .trim()
 
         // 2. Poster Extraction
-        val overviewPoster = doc.selectFirst(".tv-overview img, img.main-cover")?.attr("src")?.ifEmpty { null }
-            ?: doc.selectFirst(".tv-overview img, img.main-cover")?.attr("data-src")?.ifEmpty { null }
+        val overviewPoster = doc.selectFirst(".tv-overview img, img.main-cover")?.attr("data-src")?.ifEmpty { null }
+            ?: doc.selectFirst(".tv-overview img, img.main-cover")?.attr("data-lazy-src")?.ifEmpty { null }
+            ?: doc.selectFirst(".tv-overview img, img.main-cover")?.attr("src")?.takeIf { !it.startsWith("data:") }
         val ogPoster = doc.selectFirst("meta[property=\"og:image\"]")?.attr("content")?.ifEmpty { null }
         val poster = DiziboxParser.cleanPosterUrl(overviewPoster ?: ogPoster, mainUrl)
 
@@ -115,22 +116,46 @@ class DiziboxProvider : MainAPI() {
         val tags = doc.select(".tv-overview a[href*=\"/tur/\"], .tv-overview a[href*=\"/kategori/\"]").map { it.text().trim() }
 
         // 5. Season and Episode Extraction
-        val seasonTabs = DiziboxParser.parseSeasonTabs(html, mainUrl)
         val allEpisodes = mutableListOf<Episode>()
 
-        if (seasonTabs.isNotEmpty()) {
-            for (tab in seasonTabs) {
-                val tabEpisodes = if (tab.url == absoluteUrl) {
-                    DiziboxParser.parseEpisodes(html, tab.seasonNumber, mainUrl)
-                } else {
-                    try {
-                        val tabHtml = app.get(tab.url, referer = absoluteUrl).text
-                        DiziboxParser.parseEpisodes(tabHtml, tab.seasonNumber, mainUrl)
-                    } catch (e: Exception) {
-                        emptyList()
+        // Check if the given URL is already a single episode page
+        if (absoluteUrl.contains("-bolum") || absoluteUrl.contains("-sezon-")) {
+            val sNum = DiziboxParser.parseSeasonNumber("", absoluteUrl) ?: 1
+            val epNum = DiziboxParser.parseEpisodeNumber("", absoluteUrl) ?: 1
+            allEpisodes.add(
+                newEpisode(absoluteUrl) {
+                    this.name = "$sNum. Sezon $epNum. Bölüm"
+                    this.season = sNum
+                    this.episode = epNum
+                }
+            )
+        } else {
+            val seasonTabs = DiziboxParser.parseSeasonTabs(html, mainUrl)
+            if (seasonTabs.isNotEmpty()) {
+                for (tab in seasonTabs) {
+                    val tabEpisodes = if (tab.url == absoluteUrl) {
+                        DiziboxParser.parseEpisodes(html, tab.seasonNumber, mainUrl)
+                    } else {
+                        try {
+                            val tabHtml = app.get(tab.url, referer = absoluteUrl).text
+                            DiziboxParser.parseEpisodes(tabHtml, tab.seasonNumber, mainUrl)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                    }
+                    for (ep in tabEpisodes) {
+                        allEpisodes.add(
+                            newEpisode(ep.url) {
+                                this.name = ep.name
+                                this.season = ep.season
+                                this.episode = ep.episode
+                            }
+                        )
                     }
                 }
-                for (ep in tabEpisodes) {
+            } else {
+                val singleSeasonEpisodes = DiziboxParser.parseEpisodes(html, 1, mainUrl)
+                for (ep in singleSeasonEpisodes) {
                     allEpisodes.add(
                         newEpisode(ep.url) {
                             this.name = ep.name
@@ -139,17 +164,6 @@ class DiziboxProvider : MainAPI() {
                         }
                     )
                 }
-            }
-        } else {
-            val singleSeasonEpisodes = DiziboxParser.parseEpisodes(html, 1, mainUrl)
-            for (ep in singleSeasonEpisodes) {
-                allEpisodes.add(
-                    newEpisode(ep.url) {
-                        this.name = ep.name
-                        this.season = ep.season
-                        this.episode = ep.episode
-                    }
-                )
             }
         }
 

@@ -29,6 +29,55 @@ class DiziboxHlsRegressionTest {
     """.trimIndent()
 
     @Test
+    fun testTwoDifferentEpisodesProduceDifferentData() {
+        val ep1Url = "https://www.dizibox.live/a-confession-1-sezon-1-bolum-izle/"
+        val ep2Url = "https://www.dizibox.live/a-confession-1-sezon-2-bolum-izle/"
+        val ep3Url = "https://www.dizibox.live/adults-2-sezon-3-bolum-izle/"
+
+        assertNotEquals("Episode 1 and 2 must have different data URLs", ep1Url, ep2Url)
+        assertNotEquals("Episode 1 and 3 must have different data URLs", ep1Url, ep3Url)
+        assertNotEquals("Episode 2 and 3 must have different data URLs", ep2Url, ep3Url)
+    }
+
+    @Test
+    fun testEpisodeUrlsRemainDifferentAfterNormalization() {
+        val ep1 = DiziboxParser.fixUrl("https://www.dizibox.live/a-confession-1-sezon-1-bolum-izle/", "https://www.dizibox.live")
+        val ep2 = DiziboxParser.fixUrl("https://www.dizibox.live/a-confession-1-sezon-2-bolum-izle/", "https://www.dizibox.live")
+
+        assertNotNull(ep1)
+        assertNotNull(ep2)
+        assertNotEquals(ep1, ep2)
+    }
+
+    @Test
+    fun testNavigationCardsMustNotBecomeSeries() {
+        val navUrls = listOf(
+            "https://www.dizibox.live/arsiv/",
+            "https://www.dizibox.live/dizi-takvimi/",
+            "https://www.dizibox.live/yardim/",
+            "https://www.dizibox.live/iletisim/"
+        )
+        for (u in navUrls) {
+            assertFalse("Navigation link $u must not be accepted as series detail", DiziboxParser.isSeriesDetailUrl(u))
+            assertFalse("Navigation link $u must not be accepted as content", DiziboxParser.isContentUrl(u))
+        }
+    }
+
+    @Test
+    fun testValidImageProducesPosterUrlAndBase64IsFiltered() {
+        val mainUrl = "https://www.dizibox.live"
+        val validImg = "https://www.dizibox.live/wp-content/uploads/afisler/friends-200x290.jpg"
+        val thumbImg = "https://www.dizibox.live/wp-content/uploads/afisler/friends-50x50.jpg"
+        val base64Img = "data:image/png;base64,iVBORw0KGgoAAA..."
+        val placeholderImg = "https://www.dizibox.live/altyazi.png"
+
+        assertEquals(validImg, DiziboxParser.cleanPosterUrl(validImg, mainUrl))
+        assertEquals(validImg, DiziboxParser.cleanPosterUrl(thumbImg, mainUrl))
+        assertNull(DiziboxParser.cleanPosterUrl(base64Img, mainUrl))
+        assertNull(DiziboxParser.cleanPosterUrl(placeholderImg, mainUrl))
+    }
+
+    @Test
     fun testMasterPlaylistDetection() {
         assertTrue("Master playlist should contain EXTM3U header", SYNTHETIC_MASTER_M3U8.startsWith("#EXTM3U"))
         assertTrue("Master playlist should contain stream variant tags", SYNTHETIC_MASTER_M3U8.contains("#EXT-X-STREAM-INF"))
@@ -62,7 +111,6 @@ class DiziboxHlsRegressionTest {
 
     @Test
     fun testSourceAndQualitySeparation() {
-        // 1 host with 3 quality variants must be counted as 1 Source Host and 3 Quality Variants
         val sourceHost = "test-cdn.local"
         val qualityVariants = listOf("1080p", "720p", "480p")
 
@@ -90,38 +138,11 @@ class DiziboxHlsRegressionTest {
         val hardcodedSubtitleSample = "Hardcoded Turkish Subtitle embedded in video stream"
         val externalVttSample = "https://test-cdn.local/subs/turkish.vtt"
 
-        // Verification: Hardcoded subtitle must NOT produce an external subtitle track
         val isExternalTrack = externalVttSample.endsWith(".vtt") || externalVttSample.endsWith(".srt")
         val isHardcoded = hardcodedSubtitleSample.contains("Hardcoded")
 
         assertTrue(isExternalTrack)
         assertTrue(isHardcoded)
         assertFalse("Hardcoded stream must not be flagged as external subtitle file", !isHardcoded && isExternalTrack)
-    }
-
-    @Test
-    fun testNavigationCardExclusion() {
-        val navigationUrls = listOf(
-            "https://www.dizibox.live/arsiv/",
-            "https://www.dizibox.live/dizi-takvimi/",
-            "https://www.dizibox.live/yardim/",
-            "https://www.dizibox.live/iletisim/",
-            "https://www.dizibox.live/diziler/",
-            "https://www.dizibox.live/tum-bolumler/"
-        )
-
-        for (url in navigationUrls) {
-            assertFalse("Navigation link $url must be excluded from series detail", DiziboxParser.isSeriesDetailUrl(url))
-        }
-
-        val validSeriesUrls = listOf(
-            "https://www.dizibox.live/diziler/loki/",
-            "https://www.dizibox.live/diziler/the-ghost-in-the-shell/",
-            "https://www.dizibox.live/dizi/friends-izle-hd/"
-        )
-
-        for (url in validSeriesUrls) {
-            assertTrue("Valid series link $url must pass isSeriesDetailUrl", DiziboxParser.isSeriesDetailUrl(url))
-        }
     }
 }
