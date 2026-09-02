@@ -1,4 +1,4 @@
-version = "8"
+version = "9"
 
 cloudstream {
     setRepo("https://github.com/KorhanWithSunglasses/AethelionCS")

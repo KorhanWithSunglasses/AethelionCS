@@ -71,7 +71,7 @@ object DiziboxSourceResolver {
                 return true
             }
 
-            // 2. Molystream Stream Extraction with Full HTTP Headers (Resolves 2004 Error)
+            // 2. Molystream Master HLS Stream Extraction
             if (host.contains("molystream.org") && url.contains("/embed/")) {
                 val baseId = if (url.contains("/embed/sheila/")) {
                     url.substringAfter("/embed/sheila/").substringBefore("/")
@@ -80,72 +80,31 @@ object DiziboxSourceResolver {
                 }
 
                 if (baseId.isNotEmpty()) {
+                    val embedUrl = "https://$host/embed/$baseId"
+                    val masterUrl = "https://$host/embed/sheila/$baseId"
                     val streamHeaders = mapOf(
-                        "Referer" to url,
-                        "Origin" to "https://dbx.molystream.org",
+                        "Referer" to embedUrl,
+                        "Origin" to "https://$host",
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     )
 
-                    // A. Master Playlist (Adaptive Bitrate - Auto)
-                    val masterUrl = "https://dbx.molystream.org/embed/sheila/$baseId"
+                    // Provide the authentic Master Playlist (ExoPlayer will natively adapt & fetch available variants)
                     safeLinkCallback(
                         newExtractorLink(
                             source = "Molystream",
-                            name = "Molystream (Adaptive - Otomatik)",
+                            name = "Molystream (HLS)",
                             url = masterUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            this.referer = url
+                            this.referer = embedUrl
                             this.headers = streamHeaders
                             this.quality = Qualities.Unknown.value
-                        }
-                    )
-
-                    // B. Direct 1080p Variant
-                    safeLinkCallback(
-                        newExtractorLink(
-                            source = "Molystream",
-                            name = "Molystream 1080p (Full HD)",
-                            url = "https://dbx.molystream.org/embed/$baseId/q/1",
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = url
-                            this.headers = streamHeaders
-                            this.quality = Qualities.P1080.value
-                        }
-                    )
-
-                    // C. Direct 720p Variant
-                    safeLinkCallback(
-                        newExtractorLink(
-                            source = "Molystream",
-                            name = "Molystream 720p (HD)",
-                            url = "https://dbx.molystream.org/embed/$baseId/q/2",
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = url
-                            this.headers = streamHeaders
-                            this.quality = Qualities.P720.value
-                        }
-                    )
-
-                    // D. Direct 480p Variant (Akıcı)
-                    safeLinkCallback(
-                        newExtractorLink(
-                            source = "Molystream",
-                            name = "Molystream 480p (Akıcı)",
-                            url = "https://dbx.molystream.org/embed/$baseId/q/3",
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = url
-                            this.headers = streamHeaders
-                            this.quality = Qualities.P480.value
                         }
                     )
                 }
             }
 
-            // 3. Known Extractor Match via loadExtractor (Vidmoly, etc.)
+            // 3. Upstream Extractor Match via loadExtractor (Vidmoly, etc.)
             try {
                 loadExtractor(
                     url = url,
