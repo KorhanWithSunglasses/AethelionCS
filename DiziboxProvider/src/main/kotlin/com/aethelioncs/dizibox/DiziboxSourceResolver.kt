@@ -63,25 +63,68 @@ object DiziboxSourceResolver {
                 return true
             }
 
-            // 2. Molystream / Vidmoly Stream Direct Extraction
+            // 2. Molystream / Vidmoly Multi-Variant Stream Extraction
             if (host.contains("molystream.org") && url.contains("/embed/")) {
-                val m3u8Url = if (url.contains("/embed/sheila/")) {
-                    url
+                val baseId = if (url.contains("/embed/sheila/")) {
+                    url.substringAfter("/embed/sheila/").substringBefore("/")
                 } else {
-                    url.replace("/embed/", "/embed/sheila/")
+                    url.substringAfter("/embed/").substringBefore("/")
                 }
 
-                safeLinkCallback(
-                    newExtractorLink(
-                        source = "Molystream",
-                        name = "Molystream HLS (720p)",
-                        url = m3u8Url,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = url
-                        this.quality = Qualities.P720.value
-                    }
-                )
+                if (baseId.isNotEmpty()) {
+                    // A. Master Playlist (Adaptive Bitrate - Auto)
+                    val masterUrl = "https://dbx.molystream.org/embed/sheila/$baseId"
+                    safeLinkCallback(
+                        newExtractorLink(
+                            source = "Molystream",
+                            name = "Molystream (Adaptive - Otomatik)",
+                            url = masterUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = url
+                            this.quality = Qualities.Unknown.value
+                        }
+                    )
+
+                    // B. 1080p Stream Variant
+                    safeLinkCallback(
+                        newExtractorLink(
+                            source = "Molystream",
+                            name = "Molystream 1080p (Full HD)",
+                            url = "https://dbx.molystream.org/embed/$baseId/q/1",
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = url
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+
+                    // C. 720p Stream Variant
+                    safeLinkCallback(
+                        newExtractorLink(
+                            source = "Molystream",
+                            name = "Molystream 720p (HD)",
+                            url = "https://dbx.molystream.org/embed/$baseId/q/2",
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = url
+                            this.quality = Qualities.P720.value
+                        }
+                    )
+
+                    // D. 480p Stream Variant (Düşük Hız / Akıcı)
+                    safeLinkCallback(
+                        newExtractorLink(
+                            source = "Molystream",
+                            name = "Molystream 480p (Akıcı)",
+                            url = "https://dbx.molystream.org/embed/$baseId/q/3",
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = url
+                            this.quality = Qualities.P480.value
+                        }
+                    )
+                }
             }
 
             // 3. Known Extractor Match via loadExtractor (Vidmoly, etc.)
@@ -108,7 +151,7 @@ object DiziboxSourceResolver {
                     resolveUrlRecursive(nestedIframe, depth + 1, url)
                 }
             } catch (e: Exception) {
-                // Fail gracefully for this single branch
+                // Fail gracefully
             }
 
             return foundAnyLink

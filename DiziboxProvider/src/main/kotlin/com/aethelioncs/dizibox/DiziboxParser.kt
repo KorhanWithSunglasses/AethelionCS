@@ -32,7 +32,7 @@ object DiziboxParser {
 
     fun cleanPosterUrl(rawUrl: String?, mainUrl: String): String? {
         val fixed = fixUrl(rawUrl, mainUrl) ?: return null
-        if (fixed.contains("altyazi.png") || fixed.contains("default") || fixed.contains("blank")) {
+        if (fixed.contains("altyazi.png") || fixed.contains("default") || fixed.contains("blank") || fixed.contains("data:image")) {
             return null
         }
         return fixed.replace(Regex("""-\d+x\d+\."""), "-200x290.")
@@ -63,11 +63,14 @@ object DiziboxParser {
         val results = mutableListOf<DiziboxSearchItem>()
         val seenUrls = mutableSetOf<String>()
 
-        val cards = doc.select("article, .post, .item, .tv-item, li")
+        val cards = doc.select("article, .post, .item, .tv-item, .poster, li, .full-width .row > div")
         for (card in cards) {
-            val a = card.selectFirst("a[href*=\"/diziler/\"], a[href*=\"-izle\"]") ?: continue
+            // Ignore auth, login or modal forms
+            if (card.parents().any { it.hasClass("ajax-auth") || it.hasClass("modal") || it.id() == "login" }) continue
+
+            val a = card.selectFirst("a[href*=\"/diziler/\"], a[href*=\"-izle\"], a[href*=\"/dizi/\"]") ?: card.selectFirst("a") ?: continue
             val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-            if (href.endsWith("/diziler/") || !seenUrls.add(href)) continue
+            if (href.endsWith("/diziler/") || href.contains("#") || !seenUrls.add(href)) continue
 
             val img = card.selectFirst("img")
             val rawImg = img?.attr("data-src")?.ifEmpty { null }
@@ -76,7 +79,14 @@ object DiziboxParser {
             val poster = cleanPosterUrl(rawImg, mainUrl)
 
             val titleEl = card.selectFirst(".tv-title, .title, .post-title, h2, h3, h4") ?: a
-            val title = titleEl.text().trim().replace(Regex("""\s*\d+\.\d+/10.*"""), "").replace(Regex("""\s*izle.*"""), "").trim()
+            var title = titleEl.text().trim()
+            if (title.equals("ÜYE GİRİŞİ", ignoreCase = true) || title.equals("GİRİŞ", ignoreCase = true) || title.contains("Yorumlar")) {
+                continue
+            }
+            title = title
+                .replace(Regex("""\s*\d+\.\d+/10.*"""), "")
+                .replace(Regex("""\s*izle.*""", RegexOption.IGNORE_CASE), "")
+                .trim()
 
             if (title.isNotEmpty()) {
                 results.add(DiziboxSearchItem(title, href, poster))
@@ -103,15 +113,15 @@ object DiziboxParser {
         val results = mutableListOf<DiziboxSearchItem>()
         val seenUrls = mutableSetOf<String>()
 
-        val blocks = doc.select(".content-wrapper > div, .row, .full-width, .widget, .block")
+        val blocks = doc.select(".content-wrapper > div, .row, .full-width, .widget, .block, section")
         for (block in blocks) {
             val blockHeader = block.selectFirst(".title, h2, h3, h4, .widget-title")?.text() ?: ""
             if (blockHeader.contains(sectionTitlePattern, ignoreCase = true)) {
-                val cards = block.select("article, .post, .item, .tv-item, li")
+                val cards = block.select("article, .post, .item, .tv-item, li, div[class*='item']")
                 for (card in cards) {
                     val a = card.selectFirst("a") ?: continue
                     val href = fixUrl(a.attr("href"), mainUrl) ?: continue
-                    if (href.endsWith("/diziler/") || !seenUrls.add(href)) continue
+                    if (href.endsWith("/diziler/") || href.contains("#") || !seenUrls.add(href)) continue
 
                     val img = card.selectFirst("img")
                     val rawImg = img?.attr("data-src")?.ifEmpty { null }
@@ -120,9 +130,11 @@ object DiziboxParser {
                     val poster = cleanPosterUrl(rawImg, mainUrl)
 
                     val titleEl = card.selectFirst(".tv-title, .title, .post-title, h2, h3, h4") ?: a
-                    val title = titleEl.text().trim()
+                    var title = titleEl.text().trim()
+                    if (title.equals("ÜYE GİRİŞİ", ignoreCase = true)) continue
+                    title = title
                         .replace(Regex("""\s*\d+\.\d+/10.*"""), "")
-                        .replace(Regex("""\s*izle.*"""), "")
+                        .replace(Regex("""\s*izle.*""", RegexOption.IGNORE_CASE), "")
                         .trim()
 
                     if (title.isNotEmpty()) {
@@ -139,7 +151,7 @@ object DiziboxParser {
         val seasonTabs = mutableListOf<SeasonTab>()
         val seenSeasons = mutableSetOf<Int>()
 
-        val links = doc.select("a[href*=\"/dizi/\"][href*=\"-sezon-\"]")
+        val links = doc.select("a[href*=\"/dizi/\"], a[href*=\"-sezon-\"]")
         for (a in links) {
             val href = fixUrl(a.attr("href"), mainUrl) ?: continue
             val text = a.text().trim()
@@ -168,7 +180,6 @@ object DiziboxParser {
             val season = parseSeasonNumber(parentText, href) ?: defaultSeason
             val episode = parseEpisodeNumber(parentText, href) ?: 1
 
-            // Name / Title extraction
             val epName = if (text.contains("(") && text.contains(")")) {
                 text.substringAfter("(").substringBefore(")")
             } else if (text.isNotBlank()) {

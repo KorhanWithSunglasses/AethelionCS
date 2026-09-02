@@ -72,16 +72,45 @@ class DiziboxProvider : MainAPI() {
         val html = app.get(absoluteUrl, referer = mainUrl).text
         val doc = Jsoup.parse(html)
 
-        val rawTitle = doc.selectFirst("h1.entry-title, h1, .title, .post-title")?.text()?.trim() ?: "DiziBox"
-        val title = rawTitle.replace(Regex("""\s*izle.*"""), "").trim()
+        // 1. Robust Title Extraction (Avoiding hidden auth / login modals)
+        val ogTitle = doc.selectFirst("meta[property=\"og:title\"]")?.attr("content")?.trim()
+        val overviewTitle = doc.selectFirst(".tv-overview .title-terms, .tv-overview h1, .tv-overview .tv-title")?.text()?.trim()
+        val h1Title = doc.selectFirst("main h1, .content h1, h1.entry-title")?.text()?.trim()
 
-        val rawPoster = doc.selectFirst(".poster img, .entry-content img, article img")?.attr("data-src")?.ifEmpty { null }
-            ?: doc.selectFirst(".poster img, .entry-content img, article img")?.attr("src")?.ifEmpty { null }
-        val poster = DiziboxParser.cleanPosterUrl(rawPoster, mainUrl)
+        val rawTitle = when {
+            !ogTitle.isNullOrBlank() && !ogTitle.equals("ÜYE GİRİŞİ", ignoreCase = true) -> ogTitle
+            !overviewTitle.isNullOrBlank() && !overviewTitle.equals("ÜYE GİRİŞİ", ignoreCase = true) -> overviewTitle
+            !h1Title.isNullOrBlank() && !h1Title.equals("ÜYE GİRİŞİ", ignoreCase = true) -> h1Title
+            else -> "DiziBox"
+        }
+        val title = rawTitle
+            .replace(Regex("""\s*\d+\.\d+/10.*"""), "")
+            .replace(Regex("""\s*izle.*""", RegexOption.IGNORE_CASE), "")
+            .trim()
 
-        val plot = doc.selectFirst(".description, .entry-content p, .overview")?.text()?.trim()
-        val year = doc.selectFirst(".release-year, .year")?.text()?.toIntOrNull()
+        // 2. Poster Extraction
+        val overviewPoster = doc.selectFirst(".tv-overview img, img.main-cover")?.attr("src")?.ifEmpty { null }
+            ?: doc.selectFirst(".tv-overview img, img.main-cover")?.attr("data-src")?.ifEmpty { null }
+        val ogPoster = doc.selectFirst("meta[property=\"og:image\"]")?.attr("content")?.ifEmpty { null }
+        val poster = DiziboxParser.cleanPosterUrl(overviewPoster ?: ogPoster, mainUrl)
 
+        // 3. Plot / Description Extraction
+        val overviewPlot = doc.selectFirst(".tv-overview p, .overview, .description")?.text()?.trim()
+        val ogPlot = doc.selectFirst("meta[property=\"og:description\"]")?.attr("content")?.trim()
+        val metaPlot = doc.selectFirst("meta[name=\"description\"]")?.attr("content")?.trim()
+        val plot = when {
+            !overviewPlot.isNullOrBlank() && overviewPlot.length > 20 -> overviewPlot
+            !ogPlot.isNullOrBlank() && ogPlot.length > 20 && !ogPlot.contains("elit site") -> ogPlot
+            !metaPlot.isNullOrBlank() && metaPlot.length > 20 -> metaPlot
+            else -> overviewPlot ?: ogPlot ?: metaPlot
+        }
+
+        // 4. Year & Tags Extraction
+        val overviewText = doc.selectFirst(".tv-overview")?.text() ?: ""
+        val year = Regex("""\b(19\d\d|20\d\d)\b""").find(overviewText)?.groupValues?.get(1)?.toIntOrNull()
+        val tags = doc.select(".tv-overview a[href*=\"/tur/\"], .tv-overview a[href*=\"/kategori/\"]").map { it.text().trim() }
+
+        // 5. Season and Episode Extraction
         val seasonTabs = DiziboxParser.parseSeasonTabs(html, mainUrl)
         val allEpisodes = mutableListOf<Episode>()
 
@@ -124,6 +153,7 @@ class DiziboxProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = plot
             this.year = year
+            this.tags = if (tags.isNotEmpty()) tags else null
         }
     }
 
