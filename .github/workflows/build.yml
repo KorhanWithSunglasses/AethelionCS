@@ -22,17 +22,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          path: "src"
           fetch-depth: 0
-
-      - name: Checkout Builds Branch
-        uses: actions/checkout@v4
-        with:
-          ref: "builds"
-          path: "builds"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -46,20 +39,24 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Plugins & Run Tests
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          chmod +x ./gradlew
-          ./gradlew test
-          ./gradlew make makePluginsJson
-          cp DiziboxProvider/build/*.cs3 $GITHUB_WORKSPACE/builds/ || cp build/*.cs3 $GITHUB_WORKSPACE/builds/ || true
-          cp build/plugins.json $GITHUB_WORKSPACE/builds/ || true
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-      - name: Push to builds branch
+      - name: Run Unit & Regression Tests
+        run: ./gradlew test --info
+
+      - name: Build Plugins & Generate plugins.json
+        run: ./gradlew make makePluginsJson --info
+
+      - name: Copy Plugin Artifacts to Root Build Directory
         run: |
-          cd $GITHUB_WORKSPACE/builds
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-          git add .
-          git commit --amend -m "Build $GITHUB_SHA" || exit 0
-          git push --force
+          mkdir -p build_deploy
+          cp DiziboxProvider/build/DiziboxProvider.cs3 build_deploy/ || cp build/DiziboxProvider.cs3 build_deploy/ || true
+          cp build/plugins.json build_deploy/ || true
+
+      - name: Deploy Artifacts to builds branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: builds
+          folder: build_deploy
+          clean: false
