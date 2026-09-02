@@ -1,0 +1,16 @@
+[
+    {
+        "fileHash": "sha256-d9520458fd4c6754366640949084abb98ec4f7bff6a7a9df7559d93eea0a401d",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/KorhanWithSunglasses/AethelionCS",
+        "fileSize": 29697,
+        "status": 3,
+        "authors": [
+            
+        ],
+        "version": 9,
+        "internalName": "DiziboxProvider",
+        "url": "https://raw.githubusercontent.com/KorhanWithSunglasses/AethelionCS/builds/DiziboxProvider.cs3",
+        "name": "DiziboxProvider"
+    }
+]
