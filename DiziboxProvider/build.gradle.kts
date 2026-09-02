@@ -1,9 +1,3 @@
-plugins {
-    id("com.android.library")
-    id("kotlin-android")
-    id("com.lagradost.cloudstream3.gradle")
-}
-
 version = "7"
 
 cloudstream {
@@ -12,26 +6,6 @@ cloudstream {
 
 android {
     namespace = "com.aethelioncs.dizibox"
-    compileSdk = 35
-
-    defaultConfig {
-        minSdk = 21
-        targetSdk = 35
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = "1.8"
-        freeCompilerArgs = freeCompilerArgs + listOf(
-            "-Xno-param-assertions",
-            "-Xno-call-assertions",
-            "-Xskip-metadata-version-check"
-        )
-    }
 }
 
 dependencies {
